@@ -8,93 +8,161 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div class="app">
 
+<!-- Иконки (SVG-спрайт) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" fill="currentColor"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6" fill="currentColor"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 11v6M12 7.5v.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></symbol>
+</svg>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-title">Авто ДЗ</span>
+      <span class="demo-badge" id="demoBadge" hidden>демо</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" data-tab="profile" aria-label="Меню"><svg class="ic"><use href="#i-more"/></svg></button>
+      <button class="icon-btn" data-action="close" aria-label="Закрыть"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+  </header>
+
+  <!-- ГЛАВНАЯ -->
+  <section class="view active" id="view-home">
     <section class="banner" id="banner">
-      <div class="banner-hello">Привет, <span id="userName">друг</span>!</div>
-      <div class="banner-role" id="roleLabel">Ученик</div>
+      <div class="banner-top">
+        <span class="banner-greeting" id="greeting">Привет!</span>
+        <button class="avatar" data-tab="profile" aria-label="Профиль">
+          <span class="avatar-letter" id="avatarLetter">?</span>
+          <img id="avatarImg" alt="" hidden>
+        </button>
+      </div>
+      <div class="banner-bottom">
+        <div class="banner-label">Предметов с ДЗ</div>
+        <div class="banner-row">
+          <div class="banner-value"><span id="hwCount">0</span> <small>предм.</small></div>
+          <button class="plus" data-action="refresh" aria-label="Обновить">+</button>
+        </div>
+      </div>
     </section>
 
-    <main>
-      <!-- ГЛАВНАЯ -->
-      <section class="view active" id="view-home">
-        <div class="grid">
-          <button class="card" data-action="get_dz">
-            <span class="card-icon">📚</span>
-            <span class="card-title">Получить ДЗ</span>
-            <span class="card-sub">Все предметы</span>
-          </button>
+    <div class="grid">
+      <button class="card" data-action="get_dz">
+        <span class="card-ico">📚</span>
+        <span class="card-title">Получить ДЗ</span>
+        <span class="card-sub">Все предметы</span>
+      </button>
 
-          <button class="card" data-tab="schedule">
-            <span class="card-icon">⏰</span>
-            <span class="card-title">Авто-рассылка</span>
-            <span class="card-sub">Каждый день</span>
-          </button>
+      <button class="card" data-tab="schedule">
+        <span class="card-ico">⏰</span>
+        <span class="card-title">Авто-рассылка</span>
+        <span class="card-sub">Каждый день</span>
+      </button>
 
-          <button class="card" data-min-role="ai" data-action="ai_dz">
-            <span class="card-icon">🤖</span>
-            <span class="card-title">ДЗ от ИИ</span>
-            <span class="card-sub">Решение с объяснением</span>
-          </button>
+      <button class="card" data-min-role="ai" data-action="ai_dz">
+        <span class="card-ico">🤖</span>
+        <span class="card-title">ДЗ от ИИ</span>
+        <span class="card-sub">С объяснением</span>
+      </button>
 
-          <button class="card" data-tab="help">
-            <span class="card-icon">❓</span>
-            <span class="card-title">Помощь</span>
-            <span class="card-sub">Как пользоваться</span>
-          </button>
-        </div>
-      </section>
+      <button class="card" data-tab="help">
+        <span class="card-ico">❓</span>
+        <span class="card-title">Помощь</span>
+        <span class="card-sub">Как пользоваться</span>
+      </button>
+    </div>
+  </section>
 
-      <!-- РАССЫЛКА -->
-      <section class="view" id="view-schedule">
-        <h2 class="view-title">Авто-рассылка</h2>
-        <p class="view-text">Бот будет присылать актуальное ДЗ каждый день в выбранное время.</p>
+  <!-- ДЗ -->
+  <section class="view" id="view-homework">
+    <div class="view-head">
+      <button class="icon-btn" data-back aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="view-title">Последнее ДЗ</h2>
+    </div>
+    <p class="view-text">Последнее задание по каждому предмету.</p>
+    <div id="hwList"></div>
+  </section>
 
-        <div class="panel">
-          <label class="label" for="dzTime">Время рассылки</label>
-          <input type="time" id="dzTime" class="input" value="16:00">
-          <button class="btn primary" id="btnDzauto">Включить рассылку</button>
-          <button class="btn ghost" data-action="dzoff">Отключить рассылку</button>
-        </div>
-      </section>
+  <!-- РЕШЕНИЕ ИИ (вместо двух файлов) -->
+  <section class="view" id="view-answer">
+    <div class="view-head">
+      <button class="icon-btn" data-back aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="view-title" id="answerTitle">Решение</h2>
+    </div>
+    <div class="seg">
+      <button class="seg-btn active" data-seg="solutions">Решения</button>
+      <button class="seg-btn" data-seg="answers">Ответы</button>
+    </div>
+    <div id="answerBody"></div>
+    <button class="btn ghost" data-action="copy">Скопировать ответы</button>
+  </section>
 
-      <!-- ПОМОЩЬ -->
-      <section class="view" id="view-help">
-        <h2 class="view-title">Помощь</h2>
-        <div class="panel help-list">
-          <div><b>Получить ДЗ</b> — последние задания по всем предметам.</div>
-          <div><b>Авто-рассылка</b> — ДЗ будет приходить сама в заданное время.</div>
-          <div><b>ДЗ от ИИ</b> — решение с пошаговым объяснением. Доступно не всем.</div>
-          <div><b>Отключить рассылку</b> — остановить ежедневные сообщения.</div>
-        </div>
-      </section>
+  <!-- РАССЫЛКА -->
+  <section class="view" id="view-schedule">
+    <div class="view-head">
+      <button class="icon-btn" data-back aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="view-title">Авто-рассылка</h2>
+    </div>
+    <p class="view-text">Бот будет присылать ДЗ каждый день в выбранное время. Подтверждение придёт в чат с ботом.</p>
+    <div class="panel">
+      <label class="label" for="dzTime">Время рассылки</label>
+      <input type="time" id="dzTime" class="input" value="16:00">
+      <button class="btn primary" data-action="dzauto">Включить рассылку</button>
+      <button class="btn ghost" data-action="dzoff">Отключить рассылку</button>
+    </div>
+  </section>
 
-      <!-- ПРОФИЛЬ -->
-      <section class="view" id="view-profile">
-        <h2 class="view-title">Профиль</h2>
-        <div class="panel">
-          <div class="profile-row"><span>Имя</span><span id="profileName">—</span></div>
-          <div class="profile-row"><span>Роль</span><span id="profileRole">—</span></div>
-        </div>
+  <!-- ПОМОЩЬ -->
+  <section class="view" id="view-help">
+    <div class="view-head">
+      <button class="icon-btn" data-back aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="view-title">Помощь</h2>
+    </div>
+    <div class="panel help-list">
+      <div><b>Получить ДЗ</b> — последние задания по всем предметам.</div>
+      <div><b>Авто-рассылка</b> — ДЗ будет приходить сама в заданное время.</div>
+      <div><b>ДЗ от ИИ</b> — решение с пошаговым объяснением. Доступно не всем.</div>
+      <div><b>Отключить рассылку</b> — остановить ежедневные сообщения.</div>
+    </div>
+  </section>
 
-        <div class="panel admin-panel" data-min-role="admin">
-          <div class="admin-title">🛡️ Рассылка всем</div>
-          <textarea id="broadcastText" class="input textarea" placeholder="Текст сообщения"></textarea>
-          <button class="btn primary" data-action="broadcast">Отправить всем</button>
-        </div>
-      </section>
-    </main>
+  <!-- ПРОФИЛЬ -->
+  <section class="view" id="view-profile">
+    <div class="view-head">
+      <button class="icon-btn" data-back aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="view-title">Профиль</h2>
+    </div>
+    <div class="panel">
+      <div class="profile-row"><span>Имя</span><span id="profileName">—</span></div>
+      <div class="profile-row"><span>Роль</span><span id="profileRole">—</span></div>
+    </div>
+    <div class="panel admin-panel" data-min-role="admin">
+      <div class="admin-title">🛡️ Рассылка всем</div>
+      <textarea id="broadcastText" class="input textarea" placeholder="Текст сообщения"></textarea>
+      <button class="btn primary" data-action="broadcast">Отправить всем</button>
+    </div>
+  </section>
 
-    <nav class="bottom-nav">
-      <button class="nav-btn active" data-tab="home" aria-label="Главная">🏠</button>
-      <button class="nav-btn" data-tab="schedule" aria-label="Рассылка">⏰</button>
-      <button class="nav-btn" data-tab="help" aria-label="Помощь">❓</button>
-      <button class="nav-btn" data-tab="profile" aria-label="Профиль">👤</button>
-    </nav>
+  <p class="handle" id="handle"></p>
+</div>
 
-    <div class="toast" id="toast"></div>
-  </div>
+<!-- НИЖНЯЯ ПАНЕЛЬ -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-tab="home" aria-label="Главная"><svg class="ic"><use href="#i-home"/></svg></button>
+  <button class="nav-btn" data-tab="homework" aria-label="ДЗ"><svg class="ic"><use href="#i-list"/></svg></button>
+  <button class="nav-btn" data-tab="schedule" aria-label="Рассылка"><svg class="ic"><use href="#i-clock"/></svg></button>
+  <button class="nav-btn" data-tab="profile" aria-label="Профиль"><svg class="ic"><use href="#i-user"/></svg></button>
+</nav>
 
-  <script src="js/app.js"></script>
+<div class="toast" id="toast"></div>
+
+<script src="js/app.js"></script>
 </body>
 </html>
