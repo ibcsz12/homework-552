@@ -91,16 +91,6 @@ const DEMO = {
       tasks: [{ name: "§ 12, ответить на вопросы 1–3", files: [] }],
     },
   ],
-  answerRaw: `=== ЗАДАНИЕ 1 ===
-1. Раскроем скобки: 3x + 6 - 2x = 10.
-2. Приведём подобные слагаемые: x + 6 = 10.
-3. Перенесём 6 в правую часть: x = 4.
-Ответ: x = 4
-
-=== ЗАДАНИЕ 2 ===
-1. Площадь прямоугольника S = a * b = 6 * 7 = 42.
-2. Периметр P = 2 * (a + b) = 2 * 13 = 26.
-Ответ: S = 42, P = 26`,
 };
 
 // Заголовки для Supabase. Используется только публичный ключ.
@@ -130,11 +120,6 @@ const dataSource = {
     return { subjects: row?.payload?.subjects || [], updatedAt: row?.updated_at || null };
   },
 
-  // Решения ИИ пока демо, подключим следующим шагом
-  getAnswer: async () => {
-    await delay(400);
-    return DEMO.answerRaw;
-  },
 };
 
 // Запрос на сбор ДЗ. Бот сам решает, собирать ли (не чаще раза в 8 минут).
@@ -158,21 +143,46 @@ async function waitForFreshSnapshot(previousUpdatedAt, timeoutMs = 90000) {
   return null;
 }
 
-// Разбор текста решения: блоки "=== ЗАДАНИЕ N ===", внутри которых строка "Ответ: ..."
-function parseAnswer(raw) {
-  const chunks = raw.split(/^=== ЗАДАНИЕ (\d+) ===\s*$/m);
-  const tasks = [];
-  for (let i = 1; i < chunks.length; i += 2) {
-    const num = chunks[i];
-    const body = (chunks[i + 1] || "").trim();
-    const idx = body.lastIndexOf("Ответ:");
-    tasks.push({
-      num,
-      solution: idx >= 0 ? body.slice(0, idx).trim() : body,
-      answer: idx >= 0 ? body.slice(idx + "Ответ:".length).trim() : "",
-    });
+// ===== ИИ-РЕШЕНИЕ (очередь в Supabase, решает бот) =====
+const jobKey = (subject) => `${subject.date}__${subject.subject}`;
+
+async function getJob(key) {
+  const res = await fetch(
+    `${CONFIG.supabaseUrl}/rest/v1/ai_jobs?id=eq.${encodeURIComponent(key)}&select=status,result`,
+    { headers: sbHeaders() }
+  );
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+  const [job] = await res.json();
+  return job || null;
+}
+
+async function requestJob(key) {
+  const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/ai_jobs`, {
+    method: "POST",
+    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify({ id: key, status: "pending", requested_at: new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+}
+
+async function waitForJob(key, timeoutMs = 20 * 60 * 1000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    await delay(8000);
+    const job = await getJob(key);
+    if (job?.status === "done") return job.result;
+    if (job?.status === "error") throw new Error(job.result?.error || "Ошибка ИИ");
   }
-  return tasks;
+  throw new Error("ИИ ещё решает. Откройте позже, решение сохранится.");
+}
+
+async function getSubjectAnswer(subject) {
+  if (IS_DEMO) throw new Error("Не подключена база данных");
+  const key = jobKey(subject);
+  const job = await getJob(key);
+  if (job?.status === "done" && job.result) return job.result;
+  if (!job || job.status === "error") await requestJob(key);
+  return waitForJob(key);
 }
 
 // ===== НАВИГАЦИЯ =====
@@ -293,13 +303,19 @@ async function openAnswer(index) {
   const subject = subjectsCache[index];
   showView("answer");
   $("#answerTitle").textContent = subject?.subject || "Решение";
-  $("#answerBody").replaceChildren(h("div", { class: "skeleton" }));
+  $("#answerBody").replaceChildren(
+    h("div", { class: "panel" }, "🤖 ИИ решает задания. Обычно это несколько минут, можно не закрывать.")
+  );
 
   try {
-    const raw = await dataSource.getAnswer(subject);
-    answerTasks = parseAnswer(raw);
-  } catch {
-    toast("Не удалось получить решение");
+    const result = await getSubjectAnswer(subject);
+    answerTasks = (result.tasks || []).map((t) => ({
+      num: String(t.num),
+      solution: t.solution,
+      answer: t.answer,
+    }));
+  } catch (e) {
+    $("#answerBody").replaceChildren(h("div", { class: "panel" }, `❌ ${e.message}`));
     return;
   }
 
