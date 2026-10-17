@@ -143,12 +143,46 @@ async function waitForFreshSnapshot(previousUpdatedAt, timeoutMs = 90000) {
   return null;
 }
 
-// ===== ИИ-РЕШЕНИЕ (очередь в Supabase, решает бот) =====
-const jobKey = (subject) => `${subject.date}__${subject.subject}`;
+// ===== ИИ-РЕШЕНИЕ: очередь в Supabase, решает бот =====
+// Шаги как в чате: пожелания -> сбор заданий -> выбор заданий (если картинки или много текста) -> решение.
+const AI_STATUS_TEXT = {
+  pending: "В очереди...",
+  scanning: "Сканирую задания и распознаю картинки...",
+  approved: "Задания выбраны, запускаю решение...",
+  working: "ИИ решает задания. Обычно это несколько минут.",
+};
 
-async function getJob(key) {
+const userKey = () => String(tg?.initDataUnsafe?.user?.id || "anon");
+const savedJobKey = (subject) => `autodz_job_${subject.date}__${subject.subject}`;
+
+function readSavedJob(subject) {
+  try { return localStorage.getItem(savedJobKey(subject)); } catch { return null; }
+}
+function saveJob(subject, id) {
+  try { localStorage.setItem(savedJobKey(subject), id); } catch { /* localStorage недоступен */ }
+}
+function clearSavedJob(subject) {
+  try { localStorage.removeItem(savedJobKey(subject)); } catch { /* localStorage недоступен */ }
+}
+
+function newJobId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function createJob(payload) {
+  const id = newJobId();
+  const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/ai_jobs`, {
+    method: "POST",
+    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+    body: JSON.stringify({ id, status: "pending", payload, requested_at: new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+  return id;
+}
+
+async function getJobFull(id) {
   const res = await fetch(
-    `${CONFIG.supabaseUrl}/rest/v1/ai_jobs?id=eq.${encodeURIComponent(key)}&select=status,result`,
+    `${CONFIG.supabaseUrl}/rest/v1/ai_jobs?id=eq.${encodeURIComponent(id)}&select=status,payload,result`,
     { headers: sbHeaders() }
   );
   if (!res.ok) throw new Error(`Supabase ${res.status}`);
@@ -156,33 +190,139 @@ async function getJob(key) {
   return job || null;
 }
 
-async function requestJob(key) {
-  const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/ai_jobs`, {
-    method: "POST",
-    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
-    body: JSON.stringify({ id: key, status: "pending", requested_at: new Date().toISOString() }),
+async function approveJob(id, payload, selected) {
+  const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/ai_jobs?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+    body: JSON.stringify({ status: "approved", payload: { ...payload, selected } }),
   });
   if (!res.ok) throw new Error(`Supabase ${res.status}`);
 }
 
-async function waitForJob(key, timeoutMs = 20 * 60 * 1000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    await delay(8000);
-    const job = await getJob(key);
-    if (job?.status === "done") return job.result;
-    if (job?.status === "error") throw new Error(job.result?.error || "Ошибка ИИ");
-  }
-  throw new Error("ИИ ещё решает. Откройте позже, решение сохранится.");
+function setAnswerBody(...nodes) {
+  $("#answerBody").replaceChildren(...nodes);
 }
 
-async function getSubjectAnswer(subject) {
-  if (IS_DEMO) throw new Error("Не подключена база данных");
-  const key = jobKey(subject);
-  const job = await getJob(key);
-  if (job?.status === "done" && job.result) return job.result;
-  if (!job || job.status === "error") await requestJob(key);
-  return waitForJob(key);
+// Шаг 1: вопрос про пожелания, как в чате
+function askExtraPrompt(subject) {
+  const textarea = h("textarea", { class: "input textarea", placeholder: "Например: объясняй как для 8 класса" });
+  const extraBox = h("div", { class: "panel", hidden: "" },
+    textarea,
+    h("button", { class: "btn primary", onclick: () => startJob(subject, textarea.value.trim()) }, "Отправить и решить")
+  );
+
+  setAnswerBody(
+    h("div", { class: "panel" },
+      h("div", { class: "admin-title" }, "Хотите что-то добавить к запросу ИИ?"),
+      h("button", { class: "btn ghost", onclick: () => startJob(subject, "") }, "Нет, решить так"),
+      h("button", { class: "btn primary", onclick: () => { extraBox.hidden = false; textarea.focus(); } }, "Да, добавить")
+    ),
+    extraBox
+  );
+}
+
+// Каждый запрос — отдельная задача, поэтому решение генерируется заново для каждого пользователя
+async function startJob(subject, customPrompt) {
+  setAnswerBody(h("div", { class: "panel" }, "Отправляю запрос..."));
+  try {
+    const id = await createJob({
+      subject: subject.subject,
+      date: subject.date,
+      custom_prompt: customPrompt,
+      user_key: userKey(),
+    });
+    saveJob(subject, id);
+    await pollJob(subject, id);
+  } catch (e) {
+    setAnswerBody(h("div", { class: "panel" }, `❌ ${e.message}`));
+  }
+}
+
+// Шаг 2: выбор заданий (если бот нашёл картинки или много текста)
+function renderSelection(subject, id, job) {
+  const tasks = job.result?.tasks || [];
+  const selected = new Set(tasks.map((t) => t.idx));
+
+  const rows = tasks.map((t) =>
+    h("label", { class: "pick-row" },
+      h("input", {
+        type: "checkbox",
+        checked: "",
+        onchange: (e) => (e.target.checked ? selected.add(t.idx) : selected.delete(t.idx)),
+      }),
+      h("span", {}, t.title || `Задание ${t.idx + 1}`)
+    )
+  );
+
+  setAnswerBody(
+    h("div", { class: "panel" },
+      h("div", { class: "admin-title" }, "Выберите задания для решения"),
+      ...rows,
+      h("button", {
+        class: "btn primary",
+        onclick: async () => {
+          if (!selected.size) {
+            toast("Выберите хотя бы одно задание");
+            return;
+          }
+          try {
+            await approveJob(id, job.payload, [...selected].sort((a, b) => a - b));
+            await pollJob(subject, id);
+          } catch (e) {
+            toast(`Не удалось отправить: ${e.message}`);
+          }
+        },
+      }, "Решить выбранные")
+    )
+  );
+}
+
+// Шаг 3: ждём, пока бот решит, и показываем результат
+async function pollJob(subject, id) {
+  const started = Date.now();
+  let lastStatus = null;
+
+  while (Date.now() - started < 30 * 60 * 1000) {
+    let job = null;
+    try {
+      job = await getJobFull(id);
+    } catch {
+      // сеть или Supabase недоступны, попробуем позже
+    }
+
+    if (job?.status === "done") {
+      clearSavedJob(subject);
+      answerTasks = (job.result?.tasks || []).map((t) => ({
+        num: String(t.num),
+        solution: t.solution,
+        answer: t.answer,
+      }));
+      setAnswerTab("solutions");
+      return;
+    }
+
+    if (job?.status === "error") {
+      clearSavedJob(subject);
+      setAnswerBody(
+        h("div", { class: "panel" }, `❌ ${job.result?.error || "Ошибка ИИ"}`),
+        h("button", { class: "btn primary", onclick: () => askExtraPrompt(subject) }, "Решить заново")
+      );
+      return;
+    }
+
+    if (job?.status === "awaiting_selection") {
+      renderSelection(subject, id, job);
+      return;
+    }
+
+    if (job && job.status !== lastStatus) {
+      lastStatus = job.status;
+      setAnswerBody(h("div", { class: "panel" }, AI_STATUS_TEXT[job.status] || "Обрабатываю..."));
+    }
+    await delay(4000);
+  }
+
+  setAnswerBody(h("div", { class: "panel" }, "Пока не готово. Откройте позже, решение сохранится."));
 }
 
 // ===== НАВИГАЦИЯ =====
@@ -303,23 +443,21 @@ async function openAnswer(index) {
   const subject = subjectsCache[index];
   showView("answer");
   $("#answerTitle").textContent = subject?.subject || "Решение";
-  $("#answerBody").replaceChildren(
-    h("div", { class: "panel" }, "🤖 ИИ решает задания. Обычно это несколько минут, можно не закрывать.")
-  );
 
-  try {
-    const result = await getSubjectAnswer(subject);
-    answerTasks = (result.tasks || []).map((t) => ({
-      num: String(t.num),
-      solution: t.solution,
-      answer: t.answer,
-    }));
-  } catch (e) {
-    $("#answerBody").replaceChildren(h("div", { class: "panel" }, `❌ ${e.message}`));
+  if (IS_DEMO) {
+    setAnswerBody(h("div", { class: "panel" }, "Подключите базу данных, чтобы решать через ИИ."));
     return;
   }
 
-  setAnswerTab("solutions");
+  // Если предыдущий запрос по этому предмету не завершён, продолжаем его, а не создаём новый
+  const savedId = readSavedJob(subject);
+  if (savedId) {
+    setAnswerBody(h("div", { class: "panel" }, "Проверяю предыдущий запрос..."));
+    await pollJob(subject, savedId);
+    return;
+  }
+
+  askExtraPrompt(subject);
 }
 
 function setAnswerTab(tab) {
