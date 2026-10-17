@@ -4,6 +4,8 @@ const CONFIG = {
   githubRepo: "homework-552",
   backgroundDir: "background",
   cacheMinutes: 60,
+  supabaseUrl: "https://fvihtnpcwrftnjwwovzy.supabase.co",
+  supabaseAnonKey: "sb_publishable_XSYtPmeWYimq-cgeDEwYEw_VVD0jwrG", // публичный ключ, можно во фронтенде
   avatarPath: "images/avatar.jpg",
   botUsername: "dfdfsdfsdfsdfsdfBot", // без @
 };
@@ -101,12 +103,27 @@ const DEMO = {
 Ответ: S = 42, P = 26`,
 };
 
+const IS_DEMO = !CONFIG.supabaseUrl || CONFIG.supabaseUrl.includes("YOUR_");
+
 const dataSource = {
-  isDemo: true,
+  isDemo: IS_DEMO,
+
+  // Все ДЗ, которые бот публикует в Supabase (таблица homework_snapshot, строка id = 1)
   getHomework: async () => {
-    await delay(250);
-    return JSON.parse(JSON.stringify(DEMO.subjects));
+    if (IS_DEMO) {
+      await delay(250);
+      return { subjects: JSON.parse(JSON.stringify(DEMO.subjects)), updatedAt: null };
+    }
+    const res = await fetch(
+      `${CONFIG.supabaseUrl}/rest/v1/homework_snapshot?id=eq.1&select=payload,updated_at`,
+      { headers: { apikey: CONFIG.supabaseAnonKey, Authorization: `Bearer ${CONFIG.supabaseAnonKey}` } }
+    );
+    if (!res.ok) throw new Error(`Supabase ${res.status}`);
+    const [row] = await res.json();
+    return { subjects: row?.payload?.subjects || [], updatedAt: row?.updated_at || null };
   },
+
+  // Решения ИИ пока демо, подключим следующим шагом
   getAnswer: async () => {
     await delay(400);
     return DEMO.answerRaw;
@@ -168,14 +185,20 @@ async function loadHomework() {
   const list = $("#hwList");
   list.replaceChildren(h("div", { class: "skeleton" }));
 
+  let result;
   try {
-    subjectsCache = await dataSource.getHomework();
+    result = await dataSource.getHomework();
+    subjectsCache = result.subjects;
   } catch {
     list.replaceChildren(h("div", { class: "panel" }, "Не удалось загрузить ДЗ. Попробуйте позже."));
     return;
   }
 
   $("#hwCount").textContent = subjectsCache.length;
+  const updated = result.updatedAt
+    ? new Date(result.updatedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "";
+  $("#hwUpdated").textContent = updated ? `Обновлено: ${updated}` : "";
 
   if (!subjectsCache.length) {
     list.replaceChildren(h("div", { class: "panel" }, "📭 Нет домашних заданий"));
