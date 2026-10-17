@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Авто ДЗ</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="app">
+
+    <section class="banner" id="banner">
+      <div class="banner-hello">Привет, <span id="userName">друг</span>!</div>
+      <div class="banner-role" id="roleLabel">Ученик</div>
+    </section>
+
+    <main>
+      <!-- ГЛАВНАЯ -->
+      <section class="view active" id="view-home">
+        <div class="grid">
+          <button class="card" data-action="get_dz">
+            <span class="card-icon">📚</span>
+            <span class="card-title">Получить ДЗ</span>
+            <span class="card-sub">Все предметы</span>
+          </button>
+
+          <button class="card" data-tab="schedule">
+            <span class="card-icon">⏰</span>
+            <span class="card-title">Авто-рассылка</span>
+            <span class="card-sub">Каждый день</span>
+          </button>
+
+          <button class="card" data-min-role="ai" data-action="ai_dz">
+            <span class="card-icon">🤖</span>
+            <span class="card-title">ДЗ от ИИ</span>
+            <span class="card-sub">Решение с объяснением</span>
+          </button>
+
+          <button class="card" data-tab="help">
+            <span class="card-icon">❓</span>
+            <span class="card-title">Помощь</span>
+            <span class="card-sub">Как пользоваться</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- РАССЫЛКА -->
+      <section class="view" id="view-schedule">
+        <h2 class="view-title">Авто-рассылка</h2>
+        <p class="view-text">Бот будет присылать актуальное ДЗ каждый день в выбранное время.</p>
+
+        <div class="panel">
+          <label class="label" for="dzTime">Время рассылки</label>
+          <input type="time" id="dzTime" class="input" value="16:00">
+          <button class="btn primary" id="btnDzauto">Включить рассылку</button>
+          <button class="btn ghost" data-action="dzoff">Отключить рассылку</button>
+        </div>
+      </section>
+
+      <!-- ПОМОЩЬ -->
+      <section class="view" id="view-help">
+        <h2 class="view-title">Помощь</h2>
+        <div class="panel help-list">
+          <div><b>Получить ДЗ</b> — последние задания по всем предметам.</div>
+          <div><b>Авто-рассылка</b> — ДЗ будет приходить сама в заданное время.</div>
+          <div><b>ДЗ от ИИ</b> — решение с пошаговым объяснением. Доступно не всем.</div>
+          <div><b>Отключить рассылку</b> — остановить ежедневные сообщения.</div>
+        </div>
+      </section>
+
+      <!-- ПРОФИЛЬ -->
+      <section class="view" id="view-profile">
+        <h2 class="view-title">Профиль</h2>
+        <div class="panel">
+          <div class="profile-row"><span>Имя</span><span id="profileName">—</span></div>
+          <div class="profile-row"><span>Роль</span><span id="profileRole">—</span></div>
+        </div>
+
+        <div class="panel admin-panel" data-min-role="admin">
+          <div class="admin-title">🛡️ Рассылка всем</div>
+          <textarea id="broadcastText" class="input textarea" placeholder="Текст сообщения"></textarea>
+          <button class="btn primary" data-action="broadcast">Отправить всем</button>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-tab="home" aria-label="Главная">🏠</button>
+      <button class="nav-btn" data-tab="schedule" aria-label="Рассылка">⏰</button>
+      <button class="nav-btn" data-tab="help" aria-label="Помощь">❓</button>
+      <button class="nav-btn" data-tab="profile" aria-label="Профиль">👤</button>
+    </nav>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
