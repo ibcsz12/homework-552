@@ -16,17 +16,11 @@ if (tg) {
 }
 
 // ===== РОЛЬ =====
-// Роль берётся из Telegram ID, а не из URL. Это только для показа интерфейса.
-// Настоящую защиту данных даёт только сервер, который проверяет подпись initData.
-const ROLE_IDS = {
-  admin: [2020966976],
-  ai: [2020966976, 7223903993, 6885137743],
-};
+// Роль приходит в ссылке, которую бот формирует для каждого пользователя (?role=...).
+// Это только для показа разделов. Реальные действия проверяет бот.
+const params = new URLSearchParams(location.search);
 const ROLE_RANK = { user: 0, ai: 1, admin: 2 };
-const currentUserId = tg?.initDataUnsafe?.user?.id;
-const role = ROLE_IDS.admin.includes(currentUserId) ? "admin"
-  : ROLE_IDS.ai.includes(currentUserId) ? "ai"
-  : "user";
+const role = ROLE_RANK[params.get("role")] !== undefined ? params.get("role") : "user";
 const roleAtLeast = (need) => ROLE_RANK[role] >= ROLE_RANK[need];
 const ROLE_LABELS = { user: "Ученик", ai: "Ученик · ИИ-доступ", admin: "Администратор" };
 
@@ -327,10 +321,11 @@ const ACTIONS = {
 // ===== ПРОФИЛЬ И АВАТАР =====
 function fillProfile() {
   const user = tg?.initDataUnsafe?.user;
-  const firstName = user?.first_name || "друг";
-  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "—";
+  const firstName = user?.first_name;
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ")
+    || "нет данных Telegram, откройте через бота";
 
-  $("#greeting").textContent = `Привет, ${firstName}!`;
+  $("#greeting").textContent = firstName ? `Привет, ${firstName}!` : "Привет!";
   $("#profileName").textContent = fullName;
   $("#profileRole").textContent = ROLE_LABELS[role];
   $("#handle").textContent = CONFIG.botUsername ? `@${CONFIG.botUsername}` : "";
