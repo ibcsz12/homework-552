@@ -103,6 +103,13 @@ const DEMO = {
 Ответ: S = 42, P = 26`,
 };
 
+// Заголовки для Supabase. Используется только публичный ключ.
+const sbHeaders = (extra = {}) => ({
+  apikey: CONFIG.supabaseAnonKey,
+  Authorization: `Bearer ${CONFIG.supabaseAnonKey}`,
+  ...extra,
+});
+
 const IS_DEMO = !CONFIG.supabaseUrl || CONFIG.supabaseUrl.includes("YOUR_");
 
 const dataSource = {
@@ -116,7 +123,7 @@ const dataSource = {
     }
     const res = await fetch(
       `${CONFIG.supabaseUrl}/rest/v1/homework_snapshot?id=eq.1&select=payload,updated_at`,
-      { headers: { apikey: CONFIG.supabaseAnonKey, Authorization: `Bearer ${CONFIG.supabaseAnonKey}` } }
+      { headers: sbHeaders() }
     );
     if (!res.ok) throw new Error(`Supabase ${res.status}`);
     const [row] = await res.json();
@@ -129,6 +136,27 @@ const dataSource = {
     return DEMO.answerRaw;
   },
 };
+
+// Запрос на сбор ДЗ. Бот сам решает, собирать ли (не чаще раза в 8 минут).
+async function requestHomeworkRefresh() {
+  const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/homework_requests?id=eq.1`, {
+    method: "PATCH",
+    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+    body: JSON.stringify({ requested_at: new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+}
+
+// Ждём, пока бот опубликует новый снимок (меняется updated_at)
+async function waitForFreshSnapshot(previousUpdatedAt, timeoutMs = 90000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    await delay(3000);
+    const fresh = await dataSource.getHomework();
+    if (fresh.updatedAt && fresh.updatedAt !== previousUpdatedAt) return fresh;
+  }
+  return null;
+}
 
 // Разбор текста решения: блоки "=== ЗАДАНИЕ N ===", внутри которых строка "Ответ: ..."
 function parseAnswer(raw) {
@@ -152,7 +180,7 @@ let currentView = "home";
 const navStack = [];
 
 const LOADERS = {
-  homework: () => loadHomework(),
+  homework: () => loadHomework({ refresh: true }),
 };
 
 function showView(name, { push = true } = {}) {
@@ -181,30 +209,52 @@ function goBack() {
 // ===== ДЗ =====
 let subjectsCache = [];
 
-async function loadHomework() {
+async function loadHomework({ refresh = false } = {}) {
   const list = $("#hwList");
   list.replaceChildren(h("div", { class: "skeleton" }));
 
   let result;
   try {
     result = await dataSource.getHomework();
-    subjectsCache = result.subjects;
   } catch {
     list.replaceChildren(h("div", { class: "panel" }, "Не удалось загрузить ДЗ. Попробуйте позже."));
     return;
   }
 
+  renderHomework(result);
+
+  if (refresh && !dataSource.isDemo) {
+    $("#hwUpdated").textContent = "Обновляю ДЗ...";
+    try {
+      await requestHomeworkRefresh();
+      const fresh = await waitForFreshSnapshot(result.updatedAt);
+      if (fresh) {
+        renderHomework(fresh);
+      } else {
+        renderHomework(result);
+        toast("ДЗ уже актуальны, обновление не чаще раза в 8 минут");
+      }
+    } catch {
+      renderHomework(result);
+      toast("Не удалось обновить ДЗ");
+    }
+  }
+}
+
+function renderHomework(result) {
+  subjectsCache = result.subjects;
   $("#hwCount").textContent = subjectsCache.length;
+
   const updated = result.updatedAt
     ? new Date(result.updatedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
     : "";
   $("#hwUpdated").textContent = updated ? `Обновлено: ${updated}` : "";
 
+  const list = $("#hwList");
   if (!subjectsCache.length) {
     list.replaceChildren(h("div", { class: "panel" }, "📭 Нет домашних заданий"));
     return;
   }
-
   list.replaceChildren(...subjectsCache.map(renderSubject));
 }
 
@@ -333,7 +383,7 @@ const ACTIONS = {
     showView("homework");
     toast("Выберите предмет для решения ИИ");
   },
-  refresh: () => loadHomework(),
+  refresh: () => loadHomework({ refresh: true }),
   copy: () => copyAnswers(),
   dzauto: () => scheduleOn(),
   dzoff: () => sendToBot({ action: "dzoff" }),
@@ -346,7 +396,7 @@ function fillProfile() {
   const user = tg?.initDataUnsafe?.user;
   const firstName = user?.first_name;
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ")
-    || "нет данных Telegram, откройте через бота";
+    || `нет данных Telegram (SDK: ${tg ? "есть" : "нет"}, initData: ${tg?.initData ? "есть" : "нет"})`;
 
   $("#greeting").textContent = firstName ? `Привет, ${firstName}!` : "Привет!";
   $("#profileName").textContent = fullName;
