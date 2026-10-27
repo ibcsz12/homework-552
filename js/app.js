@@ -350,39 +350,51 @@ const ACTIONS = {
 // ===== ПРОФИЛЬ И АВАТАР =====
 function fillProfile() {
   const user = tg?.initDataUnsafe?.user;
-  const firstName = user?.first_name;
+  const firstName = user?.first_name || (user?.username ? `@${user.username}` : "");
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ")
-    || `нет данных Telegram (SDK: ${tg ? "есть" : "нет"}, initData: ${tg?.initData ? "есть" : "нет"})`;
+    || (user?.username ? `@${user.username}` : "Пользователь");
 
   $("#greeting").textContent = firstName ? `Привет, ${firstName}!` : "Привет!";
   $("#profileName").textContent = fullName;
-  $("#profileRole").textContent = ROLE_LABELS[role];
-  $("#handle").textContent = CONFIG.botUsername ? `@${CONFIG.botUsername}` : "";
+  
+  const roleEl = $("#profileRole");
+  if (roleEl) {
+    roleEl.textContent = ROLE_LABELS[role] || "Ученик";
+    roleEl.className = `badge-role ${role}`;
+  }
+
+  const idEl = $("#profileId");
+  if (idEl) {
+    idEl.textContent = user?.id ? `${user.id}` : "—";
+  }
+
+  $("#handle").textContent = user?.username ? `@${user.username}` : (CONFIG.botUsername ? `@${CONFIG.botUsername}` : "");
   $("#demoBadge").hidden = !dataSource.isDemo;
 }
 
-// Аватарка: сначала фото из Telegram, если его нет, то images/avatar.jpg, иначе буква имени.
+// Аватарка: фото из Telegram, если его нет — стильная буква имени
 function initAvatar() {
   const img = $("#avatarImg");
+  const letter = $("#avatarLetter");
   const user = tg?.initDataUnsafe?.user;
 
-  $("#avatarLetter").textContent = (user?.first_name?.[0] || "?").toUpperCase();
+  const char = (user?.first_name?.[0] || user?.username?.[0] || "U").toUpperCase();
+  letter.textContent = char;
 
-  const sources = [user?.photo_url, CONFIG.avatarPath].filter(Boolean);
-  let index = 0;
-  const tryNext = () => {
-    if (index >= sources.length) {
+  if (user?.photo_url) {
+    img.src = user.photo_url;
+    img.onload = () => {
+      img.hidden = false;
+      letter.hidden = true;
+    };
+    img.onerror = () => {
       img.hidden = true;
-      return;
-    }
-    img.src = sources[index++];
-  };
-
-  img.onload = () => {
-    img.hidden = false;
-  };
-  img.onerror = tryNext;
-  tryNext();
+      letter.hidden = false;
+    };
+  } else {
+    img.hidden = true;
+    letter.hidden = false;
+  }
 }
 
 // ===== ФОН: случайная картинка из папки background/ =====
