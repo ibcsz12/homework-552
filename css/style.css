@@ -442,6 +442,28 @@ html, body {
   padding: 12px 14px;
   margin-top: 8px;
 }
+.hw-files {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hw-files a.file, a.file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffffff !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: opacity 0.2s ease;
+  word-break: break-all;
+}
+.hw-files a.file:hover, a.file:hover {
+  opacity: 0.8;
+  color: #ffffff !important;
+}
 
 /* ===== СЕГМЕНТИРОВАННЫЙ КОНТРОЛ ===== */
 .seg {

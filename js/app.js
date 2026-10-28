@@ -226,11 +226,7 @@ function renderHomework(result) {
   list.replaceChildren(...subjectsCache.map(renderSubject));
 }
 
-function renderSubject(subject, index) {
-  const aiButton = roleAtLeast("ai")
-    ? h("button", { class: "btn primary small", onclick: () => openAnswer(index) }, "🤖 Решить ИИ")
-    : null;
-
+function renderSubject(subject) {
   return h(
     "article",
     { class: "hw-card" },
@@ -249,8 +245,7 @@ function renderSubject(subject, index) {
             )
           : null
       )
-    ),
-    aiButton
+    )
   );
 }
 
@@ -337,6 +332,13 @@ const ACTIONS = {
       toast("Функция недоступна");
       return;
     }
+    try {
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(`https://t.me/${CONFIG.botUsername}?start=ai_dz`);
+        tg.close();
+        return;
+      }
+    } catch (e) {}
     sendToBot({ action: "ai_dz" });
   },
   refresh: () => loadHomework({ refresh: true }),
