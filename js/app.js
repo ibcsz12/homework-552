@@ -4,10 +4,9 @@ const CONFIG = {
   githubRepo: "homework-552",
   backgroundDir: "background",
   cacheMinutes: 60,
-  supabaseUrl: "https://fvihtnpcwrftnjwwovzy.supabase.co",
-  supabaseAnonKey: "sb_publishable_XSYtPmeWYimq-cgeDEwYEw_VVD0jwrG", // публичный ключ, можно во фронтенде
   avatarPath: "images/avatar.jpg",
-  botUsername: "dfdfsdfsdfsdfsdfBot", // без @
+  botUsername: "dfdfsdfsdfsdfBot",
+  apiUrl: "http://127.0.0.1:8080",
 };
 
 // ===== TELEGRAM =====
@@ -17,10 +16,25 @@ if (tg) {
   tg.expand();
 }
 
+// ===== API URL (ПАРАМЕТР ИЛИ LOCALSTORAGE) =====
+const params = new URLSearchParams(location.search);
+let storedApi = null;
+try {
+  storedApi = localStorage.getItem("hw_api_url");
+} catch (e) {}
+
+const paramApi = params.get("api");
+if (paramApi) {
+  try {
+    localStorage.setItem("hw_api_url", paramApi);
+  } catch (e) {}
+}
+
+const API_BASE = (paramApi || storedApi || CONFIG.apiUrl).replace(/\/$/, "");
+
 // ===== РОЛЬ =====
 // Роль приходит в ссылке, которую бот формирует для каждого пользователя (?role=...).
 // Это только для показа разделов. Реальные действия проверяет бот.
-const params = new URLSearchParams(location.search);
 const ROLE_RANK = { user: 0, ai: 1, admin: 2 };
 const role = ROLE_RANK[params.get("role")] !== undefined ? params.get("role") : "user";
 const roleAtLeast = (need) => ROLE_RANK[role] >= ROLE_RANK[need];
@@ -93,43 +107,29 @@ const DEMO = {
   ],
 };
 
-// Заголовки для Supabase. Используется только публичный ключ.
-const sbHeaders = (extra = {}) => ({
-  apikey: CONFIG.supabaseAnonKey,
-  Authorization: `Bearer ${CONFIG.supabaseAnonKey}`,
-  ...extra,
-});
-
-const IS_DEMO = !CONFIG.supabaseUrl || CONFIG.supabaseUrl.includes("YOUR_");
-
 const dataSource = {
-  isDemo: IS_DEMO,
+  isDemo: false,
 
-  // Все ДЗ, которые бот публикует в Supabase (таблица homework_snapshot, строка id = 1)
+  // Все ДЗ, которые бот публикует в SQLite через локальный API
   getHomework: async () => {
-    if (IS_DEMO) {
-      await delay(250);
+    try {
+      const res = await fetch(`${API_BASE}/api/homework`);
+      if (!res.ok) throw new Error(`API HTTP ${res.status}`);
+      const data = await res.json();
+      return { subjects: data.subjects || [], updatedAt: data.updated_at || null };
+    } catch (err) {
+      console.warn("API unreachable, fallback to demo/cache:", err);
       return { subjects: JSON.parse(JSON.stringify(DEMO.subjects)), updatedAt: null };
     }
-    const res = await fetch(
-      `${CONFIG.supabaseUrl}/rest/v1/homework_snapshot?id=eq.1&select=payload,updated_at`,
-      { headers: sbHeaders() }
-    );
-    if (!res.ok) throw new Error(`Supabase ${res.status}`);
-    const [row] = await res.json();
-    return { subjects: row?.payload?.subjects || [], updatedAt: row?.updated_at || null };
   },
-
 };
 
-// Запрос на сбор ДЗ. Бот сам решает, собирать ли (не чаще раза в 8 минут).
+// Запрос на сбор ДЗ через локальный API
 async function requestHomeworkRefresh() {
-  const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/homework_requests?id=eq.1`, {
-    method: "PATCH",
-    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
-    body: JSON.stringify({ requested_at: new Date().toISOString() }),
+  const res = await fetch(`${API_BASE}/api/homework/refresh`, {
+    method: "POST",
   });
-  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+  if (!res.ok) throw new Error(`API HTTP ${res.status}`);
 }
 
 // Ждём, пока бот опубликует новый снимок (меняется updated_at)
@@ -347,9 +347,55 @@ const ACTIONS = {
   close: () => (tg ? tg.close() : toast("Откройте через Telegram")),
 };
 
+// ===== ПОЛУЧЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =====
+function getUser() {
+  // 1. Из штатного Telegram WebApp SDK
+  if (tg?.initDataUnsafe?.user?.id || tg?.initDataUnsafe?.user?.first_name) {
+    return tg.initDataUnsafe.user;
+  }
+
+  // 2. Парсинг из сырого tg.initData
+  if (tg?.initData) {
+    try {
+      const q = new URLSearchParams(tg.initData);
+      const uStr = q.get("user");
+      if (uStr) return JSON.parse(uStr);
+    } catch (e) {}
+  }
+
+  // 3. Парсинг из хэша URL (location.hash -> tgWebAppData)
+  if (location.hash) {
+    try {
+      const hp = new URLSearchParams(location.hash.slice(1));
+      const raw = hp.get("tgWebAppData");
+      if (raw) {
+        const q = new URLSearchParams(raw);
+        const uStr = q.get("user");
+        if (uStr) return JSON.parse(uStr);
+      }
+    } catch (e) {}
+  }
+
+  // 4. Fallback из GET-параметров URL (?fname=...&uname=...&id=...)
+  const pName = params.get("fname") || params.get("first_name") || params.get("name");
+  const pUser = params.get("uname") || params.get("username");
+  const pId = params.get("id");
+  if (pName || pUser || pId) {
+    return {
+      first_name: pName || "",
+      last_name: params.get("lname") || params.get("last_name") || "",
+      username: pUser ? pUser.replace(/^@/, "") : "",
+      id: pId ? Number(pId) || pId : "",
+      photo_url: params.get("photo_url") || ""
+    };
+  }
+
+  return null;
+}
+
 // ===== ПРОФИЛЬ И АВАТАР =====
 function fillProfile() {
-  const user = tg?.initDataUnsafe?.user;
+  const user = getUser();
   const firstName = user?.first_name || (user?.username ? `@${user.username}` : "");
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ")
     || (user?.username ? `@${user.username}` : "Пользователь");
@@ -368,29 +414,45 @@ function fillProfile() {
     idEl.textContent = user?.id ? `${user.id}` : "—";
   }
 
-  $("#handle").textContent = user?.username ? `@${user.username}` : (CONFIG.botUsername ? `@${CONFIG.botUsername}` : "");
+  const handle = user?.username ? `@${user.username}` : (CONFIG.botUsername ? `@${CONFIG.botUsername}` : "");
+  $("#handle").textContent = handle;
   $("#demoBadge").hidden = !dataSource.isDemo;
 }
 
-// Аватарка: фото из Telegram, если его нет — стильная буква имени
+// Аватарка: фото из Telegram -> публичный Telegram CDN -> генератор -> стильная буква
 function initAvatar() {
   const img = $("#avatarImg");
   const letter = $("#avatarLetter");
-  const user = tg?.initDataUnsafe?.user;
+  const user = getUser();
 
   const char = (user?.first_name?.[0] || user?.username?.[0] || "U").toUpperCase();
   letter.textContent = char;
 
-  if (user?.photo_url) {
-    img.src = user.photo_url;
-    img.onload = () => {
-      img.hidden = false;
-      letter.hidden = true;
-    };
-    img.onerror = () => {
+  const sources = [];
+  if (user?.photo_url) sources.push(user.photo_url);
+  if (user?.username) sources.push(`https://t.me/i/userpic/320/${user.username}.jpg`);
+  if (user?.first_name) {
+    sources.push(`https://ui-avatars.com/api/?name=${encodeURIComponent(user.first_name)}&background=f38020&color=fff&bold=true`);
+  }
+
+  let index = 0;
+  const tryNext = () => {
+    if (index >= sources.length) {
       img.hidden = true;
       letter.hidden = false;
-    };
+      return;
+    }
+    img.src = sources[index++];
+  };
+
+  img.onload = () => {
+    img.hidden = false;
+    letter.hidden = true;
+  };
+  img.onerror = tryNext;
+
+  if (sources.length > 0) {
+    tryNext();
   } else {
     img.hidden = true;
     letter.hidden = false;
