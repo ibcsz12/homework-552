@@ -366,15 +366,18 @@ function fillProfile() {
 // Аватарка: сначала фото из Telegram, если его нет, то images/avatar.jpg, иначе буква имени.
 function initAvatar() {
   const img = $("#avatarImg");
+  const letter = $("#avatarLetter");
   const user = tg?.initDataUnsafe?.user;
 
-  $("#avatarLetter").textContent = (user?.first_name?.[0] || "?").toUpperCase();
+  const char = (user?.first_name?.[0] || user?.username?.[0] || "?").toUpperCase();
+  if (letter) letter.textContent = char;
 
   const sources = [user?.photo_url, CONFIG.avatarPath].filter(Boolean);
   let index = 0;
   const tryNext = () => {
     if (index >= sources.length) {
       img.hidden = true;
+      if (letter) letter.hidden = false;
       return;
     }
     img.src = sources[index++];
@@ -382,6 +385,7 @@ function initAvatar() {
 
   img.onload = () => {
     img.hidden = false;
+    if (letter) letter.hidden = true;
   };
   img.onerror = tryNext;
   tryNext();
